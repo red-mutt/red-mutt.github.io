@@ -1,1 +1,48 @@
 <h1>Part IX : Dynamic Memory Allocation</h1>
+
+<h2>What are we doing?</h2>
+
+<p>
+    To put it short, the point of this section is to regain back the features provided by malloc and free in C that we lost 
+    not having an 
+    operating system that provides these features (until now). If you weren't aware we need access to malloc because currently
+    our memory is static, every size is known at compile time, but for a more functional OS we need to make things where size 
+    or lifetime is unknown. A good example of where we need this is in filesystems, where the sizes of files and directories 
+    are unknown. Another thing to know is that the versions of malloc and free we are writing are for use only inside of the
+    kernel, if we choose to run code outside of the kernel in userspace, we will need different versions.
+</p>
+
+<p>
+    For this allocator, we are not actually writing a driver for any sort of hardware, this is completely software.
+    You may be thinking of the Memory managment unit (MMU), but this is a device for translating and protecting memory
+    addresses. What we are writing does something different which is deciding how to divide memory up and deciding who owns
+    it. We would interface with the MMU if we choose to go into paging. But for now we aren't doing that.
+</p>
+
+<h3>How does the heap work?</h3>
+
+<p>
+    In computing there are two meanings of the word heap, one is a data structure which satisfies the "heap condition" and
+    is not related to the one we are creating which is heap memory which is simply a region of memory used for dynamic memory
+    allocation
+</p>
+
+<p>
+    After the end address of our kernel, we can place like a 4MB small section of memory for our heap. Initially the allocator 
+    does not know anything about which blocks are free and such. So we use a small ammount of the heap space to make a header.
+    This contains info such as the size of the current block, whether it is free and the address of the next block.
+</p>
+
+<p>
+    Speaking of blocks, the heap is made up of them, initially it is one big block when all memory is free. Every block
+    has it's own header and due to the next member, the collection of headers form a linked list, and then this is essentially
+    the structure of our heap. And then malloc will traverse the linked list of headers looking for the next free block
+    and whether it's big enough and then will return the pointer if successful. free will just take the address and then set 
+    the memory to free. But there is a problem with fragmentation here, where after enough use we may have 300 bytes free, but 
+    no segment that is a size of 250 bytes due to having many smaller segments that are all seperate. This is fixed using 
+    coalescing, where we merge adjacent free blocks. This all seems simple enough. Let's get on to creating.
+</p>
+
+
+
+
