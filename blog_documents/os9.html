@@ -1,48 +1,84 @@
-<h1>Part IX : Dynamic Memory Allocation</h1>
-
-<h2>What are we doing?</h2>
+<h1>Part IX : Physical Memory Manager</h1>
 
 <p>
-    To put it short, the point of this section is to regain back the features provided by malloc and free in C that we lost 
-    not having an 
-    operating system that provides these features (until now). If you weren't aware we need access to malloc because currently
-    our memory is static, every size is known at compile time, but for a more functional OS we need to make things where size 
-    or lifetime is unknown. A good example of where we need this is in filesystems, where the sizes of files and directories 
-    are unknown. Another thing to know is that the versions of malloc and free we are writing are for use only inside of the
-    kernel, if we choose to run code outside of the kernel in userspace, we will need different versions.
+    This chapter marks a larger milestone in our OS development, this is where we start developing one of our first major
+    kernel subsystems, this being memory managment. Due to this subsystem being larger than previous parts, the next 3
+    chapters (including this one) is dedicated to memory managment.<br>
+    the 3 parts are split into:
+    <ul>
+        <li>Physical Memory Manager (PMM): Manages actual RAM</li>
+        <li>Virtual Memory Manager (VMM): Manages virtual addresses using paging</li>
+        <li>Kernel Heap: provides dynamic allocation (kmalloc/kfree)</li>
+    </ul>
+    The later two will be explained in due time. But for now lets start with the PMM
+</p>
+
+<h2>Where are we now?</h2>
+
+<p>
+    Currently our OS is a kernel that is loaded into memory by the bootloader, the code can access memory, but only statically
+    as defined at compile time, so we can create and access variables and their size, addresses and lifetime is all defined
+    when we compile our OS.</br>
+    This is fine. But we will soon need to implement things where the size is unknown, which is where dynamic allocation comes
+    in (which is what is made in chapter 11). But before we can implement things such as malloc, we need to know which memory 
+    is actually available for us to use. This is where PMM comes in.
 </p>
 
 <p>
-    For this allocator, we are not actually writing a driver for any sort of hardware, this is completely software.
-    You may be thinking of the Memory managment unit (MMU), but this is a device for translating and protecting memory
-    addresses. What we are writing does something different which is deciding how to divide memory up and deciding who owns
-    it. We would interface with the MMU if we choose to go into paging. But for now we aren't doing that.
+    Suppose we have 8GB of ram in our virtual machine, this 8GB has some things that already occupy the space, such as the
+    BIOS and the kernel, so we need to a way to know whether memory is used or not, so essentially the PMM is just a database
+    of our ram usage, at a high level, think of it as:
 </p>
 
-<h3>How does the heap work?</h3>
+<pre><code>Address        Status
+
+0x00000000     Used
+0x00100000     Used
+0x00200000     Free
+0x00201000     Free
+0x00202000     Used</code></pre>
+
+<h2>How does the PMM work?</h2>
 
 <p>
-    In computing there are two meanings of the word heap, one is a data structure which satisfies the "heap condition" and
-    is not related to the one we are creating which is heap memory which is simply a region of memory used for dynamic memory
-    allocation
+    The PMM divides RAM into fixed size chunks called frames. A frame is typically 4KiB, and every byte in ram belongs to a 
+    single frame.<br>
+    The PMM treats each frame as either free or used, it doesn't really care about what the frame contains, it only cares
+    about who owns the frame. With the PMM we really only want two functions. These being <code>alloc_frame();</code> and 
+    <code>free_frame();</code> with the latter having a parameter be the frame address and the prior returning the frame
+    address.
+</p>
+
+<h2>How will we make this?</h2>
+
+<p>
+    The first thing we need to know is how much RAM the computer has. There is no hardware in the CPU that can tell us this,
+    but the bios knows this information. The bootloader can query the BIOS on startup for something called a memory map which
+    is just data which describes the regions of memory. It is an array where every item has 3 fields. These being:
+    <ul>
+        <li>Base address: tells us where the region begins in physical memory</li>
+        <li>Length: tells us how long this region covers</li>
+        <li>Type: tells us what the memory is used for (so like whether it's free or not</li>
+    </ul>
+    We will not be using the memory map for long, it is just a piece of information that will allow us to initialize the PMM
+    properly.
 </p>
 
 <p>
-    After the end address of our kernel, we can place like a 4MB small section of memory for our heap. Initially the allocator 
-    does not know anything about which blocks are free and such. So we use a small ammount of the heap space to make a header.
-    This contains info such as the size of the current block, whether it is free and the address of the next block.
+    Second, we need to split memeory up into 4096 byte long frames, we do this by creating a data structure that we will use 
+    to track our frames. The data structure we use will be a bitmap, this is just an array of bits where every bit maps to a
+    a frame, and every zero means free and every one means used.
 </p>
 
 <p>
-    Speaking of blocks, the heap is made up of them, initially it is one big block when all memory is free. Every block
-    has it's own header and due to the next member, the collection of headers form a linked list, and then this is essentially
-    the structure of our heap. And then malloc will traverse the linked list of headers looking for the next free block
-    and whether it's big enough and then will return the pointer if successful. free will just take the address and then set 
-    the memory to free. But there is a problem with fragmentation here, where after enough use we may have 300 bytes free, but 
-    no segment that is a size of 250 bytes due to having many smaller segments that are all seperate. This is fixed using 
-    coalescing, where we merge adjacent free blocks. This all seems simple enough. Let's get on to creating.
+    The third step is to then fill out in the bitmap the used and free memory, this is done in different ways for each part.
+    For the kernel we must use a linker script to know the start and end location, and then the bootloader has known boot
+    boot locations. and then everything else would be usable theoretically.
 </p>
 
-
+<p>
+    Now after all these steps we can make <code>allocate_frame()</code> which just iterates the bitmap until a 0 is found.
+    And then <code>free_frame()</code> just indexes and then frees the frame. And then this is fully how the PMM works.
+</p>
 
 
