@@ -1,1 +1,80 @@
 <h1>Part X : Paging and Virtual Memory</h1>
+
+<h2>Some context</h2>
+
+<p>
+    Now that we have already conquered the Physical Memory Manager (PMM) and we have our 4096 byte physical frames.
+    Now we must fufill the VMM's job which is to make software (which is currently only our kernel) into thinking it has a
+    contiguous and private block in memory, when in reality it is divided up into 4KiB frames. This is done by the CPU's 
+    memory managment unit (MMU) which is a physical piece of hardware (So we are back to writing drivers).
+</p>
+
+<p>
+    Currently the CPU treats all adresses as physical, but after this section all addresses will be treated as a virtual
+    address. A virtual address is simply just a fake address that the CPU trnaslates into a physical one. Currently we already
+    have a pretty simple paging system, this is where the virtual address = the physical address.
+</p>
+
+<h2>Why do we want to implement this</h2>
+
+<p>
+    There are a couple reasons why we would want to implement paging on top of our current system. The first is process
+    isolation. When we go onto implement processes one process may use one frame and the other may use the next, but process 
+    A can still overwrite data in Process B, a modern operating system wouuld not allow something like this.
+</p>
+
+<p>
+    Another issue is that programs will assume fixed addresses, this means that if we define <code>int x;</code> the compiler
+    defines it's location as a hard codes place in memory. However, with paging the variable's location is relative to the
+    location of the program as we have our virtual memory addresses.
+</p>
+
+<p>
+    So the reason we make this is really only for infrastructure for future feature like processes, usermode and the heap.
+    But right now with our kernel implementing paging will also allow for a form of memory protection where if we were to 
+    do an action that would corrupt memory it would instead cause a page fault.
+</p>
+
+<h2>How x86 Paging works</h2>
+
+<p>
+    After we implement paging each CPU-generated adress is now a virtual address, so it implements itself pretty silently.
+    And then the paging unit translates to physical ram and then accesses without the program ever knowing this happened.
+    With our paging, we need a structure to translate every possible virtual address into a physical address, we can't do 
+    this directly as that would result in 4Bil entries, so this is why we use a page and page table.
+    We already have frames, so now our job is to just trnaslate a virtual page to a physical frame.
+</p>
+
+<p>
+    In 32-bit mode, each adress is not treated as a single number any more and is split into:
+</p>
+
+<pre>31                22 21                12 11            0
+
+┌──────────────────┬────────────────────┬────────────────┐
+│ Directory index  │ Table index        │ Offset         │
+└──────────────────┴────────────────────┴────────────────┘
+
+        10 bits            10 bits          12 bits</pre>
+
+<p>
+    First of all the bottom 12 bits are the offset. 2^12 = 4096, so you can imagine what this might represent. This tells
+    where inside of the page we are. The next 10 bits select an entry inside of the page table. Each page table has 1024
+    entries as 2^10 = 1024. The next 10 bits are the page direcectory index, which point to a specific page table.
+</p>
+
+<h3>Page directory structure</h3>
+
+<p>
+    The page directory is a 1024 sized array which contains 32bits, each entry is made up of a 20 bit page table address, and
+    then 12 bits of flags:
+</p>
+
+<pre>31                    12 11          0
++-----------------------+-------------+
+| Page table address    | Flags       |
++-----------------------+-------------+</pre>
+
+<p>
+    
+</p>
