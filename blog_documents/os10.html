@@ -63,7 +63,7 @@
     entries as 2^10 = 1024. The next 10 bits are the page direcectory index, which point to a specific page table.
 </p>
 
-<h3>Page directory structure</h3>
+<h3>Page directory/table structure</h3>
 
 <p>
     The page directory is a 1024 sized array which contains 32bits, each entry is made up of a 20 bit page table address, and
@@ -76,5 +76,41 @@
 +-----------------------+-------------+</pre>
 
 <p>
-    
+    The page table address is physical.<br>
+    We only really need to concern ourself with the bottom 3 bits of the flags:
+    <ul>
+        <li>Bit 0 is the present flag if it is 0, the page table does not exist, if it is 1, then it does</li>
+        <li>Bit 1 is the Writable flag. 0 = read only, 1 = writable
+        <li>Bit 2 is the User flag, if 0, then the page table is kernel only, if 1 then it is user accesible.</li>
+    </ul>
+    The page table has a similar structure:
 </p>
+
+<pre>31                    12 11          0
++-----------------------+-------------+
+| Physical frame addr   | Flags       |
++-----------------------+-------------+</pre>
+
+<p>
+    This also has the same flags but this time just to do with the pages instead of the page tables. 
+</p>
+
+<h3>Enabling after creation</h3>
+
+<p>
+    After the creation and fufillment of our page directories and tables, we then need to tell the CPU that we want to enable
+    paging. The first step to do this is to fill the content of Control register 3 (CR3) This contains where the current
+    page directory is. So we must put the active directory within there. When processes are switched, The directory for the 
+    process will also be switched. (However for the current stage of our OS we will end with there only being one page
+    directory).
+</p>
+
+<p>
+    Then after this we must finally enable paging via changing CR0, which controls whether major CPU features are active. 
+    This will automatically activate paging and start translating adresses. So all we need to do is Allocate a page directory,
+    Allocate a page table, Load CR3 and then enable paging. This seems easy, and this is because enabling paging is the easiest
+    part of this chapter. The actual complexity comes from making our full virtual memory subsystem. We will cover this later
+    in the chapter, but for now let's make a simple implementation to get paging up and running.
+</p>
+
+
