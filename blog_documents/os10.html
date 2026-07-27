@@ -313,7 +313,7 @@ void init_vmm() {
     memset(tbl_ptr, 0, 4096);
     
     //gives every page up to the limit an entry in the table.
-    for (uint32_t i = 0; i < 1024; i++) {
+    for (uint32_t i = 0; i &lt; 1024; i++) {
         (*tbl_ptr)[i] = (i * 0x1000) | PAGE_PRESENT | PAGE_WRITABLE;
     }
 
@@ -332,15 +332,15 @@ page_table_t* create_page_table(uint32_t directory_index, uint32_t flags) {
 }
 
 void map_page(uintptr_t virtual_address, uintptr_t physical_address, uint32_t flags) {
-    uint16_t dir_index = (virtual_address >> 22);
-    uint16_t table_index = (virtual_address >> 12); 
+    uint16_t dir_index = (virtual_address &gt;&gt; 22);
+    uint16_t table_index = (virtual_address &gt;&gt; 12); 
 
     uint32_t dir_entry = (*current_directory)[dir_index];
     page_table_t* selected_table;
-    if (!(dir_entry & PAGE_PRESENT)) {
+    if (!(dir_entry &amp; PAGE_PRESENT)) {
         selected_table = create_page_table(dir_index, flags);
     } else {
-        selected_table = (page_table_t*)(dir_entry & 0xFFFFF000);
+        selected_table = (page_table_t*)(dir_entry &amp; 0xFFFFF000);
     }
 
     (*selected_table)[table_index] = physical_address | flags;
@@ -348,77 +348,77 @@ void map_page(uintptr_t virtual_address, uintptr_t physical_address, uint32_t fl
 }
 
 void unmap_page(uintptr_t virtual_address) {
-    uint16_t dir_index = (virtual_address >> 22);
-    uint16_t table_index = (virtual_address >> 12);  
+    uint16_t dir_index = (virtual_address &gt;&gt; 22);
+    uint16_t table_index = (virtual_address &gt;&gt; 12);  
 
     uint32_t dir_entry = (*current_directory)[dir_index];
-    page_table_t* selected_table = (page_table_t*)(dir_entry & 0xFFFFF000);
-    (*selected_table)[table_index] &= ~(PAGE_PRESENT);
+    page_table_t* selected_table = (page_table_t*)(dir_entry &amp; 0xFFFFF000);
+    (*selected_table)[table_index] &amp;= ~(PAGE_PRESENT);
     flush_tlb_page(virtual_address);
 }
 
 uintptr_t get_physical_address(uintptr_t virtual_address) {
-    uint16_t dir_index = (virtual_address >> 22);
-    uint16_t table_index = (virtual_address >> 12);  
+    uint16_t dir_index = (virtual_address &gt;&gt; 22);
+    uint16_t table_index = (virtual_address &gt;&gt; 12);  
 
     uint32_t dir_entry = (*current_directory)[dir_index];
-    page_table_t* selected_table = (page_table_t*)(dir_entry & 0xFFFFF000);
+    page_table_t* selected_table = (page_table_t*)(dir_entry &amp; 0xFFFFF000);
     return (*selected_table)[table_index];
 }
 
 void page_fault_handler(registers_t* registers) {
 
     uintptr_t address = get_cr2();
-    uint32_t error_code = registers->error_code;
+    uint32_t error_code = registers-&gt;error_code;
 
-    vga_text_writeline(&terminal, "PAGE FAULT");
+    vga_text_writeline(&amp;terminal, "PAGE FAULT");
 
-    vga_text_write(&terminal, "Address: ");
-    vga_text_write_hex(&terminal, address);
-    vga_text_writeline(&terminal, "");
+    vga_text_write(&amp;terminal, "Address: ");
+    vga_text_write_hex(&amp;terminal, address);
+    vga_text_writeline(&amp;terminal, "");
 
-    vga_text_write(&terminal, "Error code: ");
-    vga_text_write_hex(&terminal, error_code);
-    vga_text_writeline(&terminal, "");
+    vga_text_write(&amp;terminal, "Error code: ");
+    vga_text_write_hex(&amp;terminal, error_code);
+    vga_text_writeline(&amp;terminal, "");
 
 
-    if (error_code & PRESENT_FAULT) {
-        vga_text_writeline(&terminal, "Reason: Protection violation");
+    if (error_code &amp; PRESENT_FAULT) {
+        vga_text_writeline(&amp;terminal, "Reason: Protection violation");
     }
     else {
-        vga_text_writeline(&terminal, "Reason: Page not present");
+        vga_text_writeline(&amp;terminal, "Reason: Page not present");
     }
 
 
-    if (error_code & WRITE_FAULT) {
-        vga_text_writeline(&terminal, "Access: Write");
-    }
-    else {
-        vga_text_writeline(&terminal, "Access: Read");
-    }
-
-
-    if (error_code & USER_FAULT) {
-        vga_text_writeline(&terminal, "Mode: User");
+    if (error_code &amp; WRITE_FAULT) {
+        vga_text_writeline(&amp;terminal, "Access: Write");
     }
     else {
-        vga_text_writeline(&terminal, "Mode: Kernel");
+        vga_text_writeline(&amp;terminal, "Access: Read");
     }
 
 
-    if (error_code & RESERVED_FAULT) {
-        vga_text_writeline(&terminal, "Reserved bit violation");
+    if (error_code &amp; USER_FAULT) {
+        vga_text_writeline(&amp;terminal, "Mode: User");
+    }
+    else {
+        vga_text_writeline(&amp;terminal, "Mode: Kernel");
     }
 
 
-    if (error_code & INSTRUCTION_FETCH_FAULT) {
-        vga_text_writeline(&terminal, "Instruction fetch fault");
+    if (error_code &amp; RESERVED_FAULT) {
+        vga_text_writeline(&amp;terminal, "Reserved bit violation");
     }
 
 
-    vga_text_write(&terminal, "Instruction address: ");
-    vga_text_write_hex(&terminal, registers->eip);
-    vga_text_writeline(&terminal, "");
+    if (error_code &amp; INSTRUCTION_FETCH_FAULT) {
+        vga_text_writeline(&amp;terminal, "Instruction fetch fault");
+    }
+
+
+    vga_text_write(&amp;terminal, "Instruction address: ");
+    vga_text_write_hex(&amp;terminal, registers-&gt;eip);
+    vga_text_writeline(&amp;terminal, "");
 
 
     // Stop execution
@@ -428,5 +428,125 @@ void page_fault_handler(registers_t* registers) {
 }</code></pre>
 
 <p>
+    Here the init function is mostly the same, let's take a look into all the functions that i have made to suport the paging
+    infrastructure.
+</p>
 
+<h3>create_page_table</h3>
+
+<p>
+    This function is pretty simple, we just allocate a physical frame, set it's contents to 0, and then plug this into the 
+    current directory using the given directory index and flags.
+</p>
+
+<h3>map_page</h3>
+
+<p>
+    This is one of the main functions to be used by the rest of our kernel. We start by extracting the directory and table 
+    indexes by using a bit shift. We next then check if the page table doesn't exist, if it doesn't then we would need to 
+    create a new page table using the previous function we just made, if there is a page table we just get it's address by 
+    performing and on the entry with the bits that would only have the address and not the flags.<br>
+    After we get our selected table we would then use the table index to set the entry in the page table to the physical 
+    address. After this we then flush the TLB which is like flushing the previous cache.
+</p>
+
+<h3>unmap_page</h3>
+
+<p>
+    This function is virtually the opposite of the previous, we just go to the page (which is the same method in the previous 
+    functions) and then set the present flag to 0. It's that simple.
+</p>
+
+<h3>get_physical_address</h3>
+
+<p>
+    This is mainly a function for if we ever want to debug in future, as we may quickly need to convert a virtual address
+    into a physical one. The function works as previous but simply just returns the entry in the page table (which would 
+    be the physical address)
+</p>
+
+<h3>page_fault_handler</h3>
+
+<p>
+    Page faults are caused by CPU exceptions, so we would want to call this function from our ISR handler, as so:
+</p>
+
+<pre><code>void isr_handler(registers_t* regs) {
+    switch (regs-&gt;interrupt_number) {
+        case 14:
+            page_fault_handler(regs);
+            break;
+        default:
+            vga_text_writeline(&amp;terminal, exception_messages[regs-&gt;interrupt_number]);
+            break;
+    }
+
+    for (;;);
+}</code></pre>
+
+
+<p>
+    The quality of the page_fault_handler function helps finding errors in our operating system in future, 
+    the more information we give about a 
+    page fault, the better, as we can then use this to fix any issues we have with memory access. In my function, CR2 contains 
+    the virtual address that the fault happened at, this is a crucial piece of info that we would definitely want to print.
+</p>
+
+<p>
+    Everything else comes from the bits of the error code given by our registers_t type. So we just print eveyrything
+    that we defined earlier in our header, after this we also print out the latest instruction via eip and halt.
+</p>
+
+<h3>Assembly updated</h3>
+
+<p>
+    And last but not least, the functions written in ASM, like flushing the TLB and retrieving CR2:
+</p>
+
+<pre class="language-x86asm"><code>[BITS 32]
+
+global set_cr3
+global set_cr0
+global flush_tlb
+global flush_tlb_page
+global get_cr2
+
+set_cr3:
+    mov eax, [esp + 4]
+    mov cr3, eax
+    ret
+
+set_cr0:
+    mov eax, cr0
+    or eax, 0x80000000
+    mov cr0, eax
+    ret
+
+get_cr2:
+    mov eax, cr2 
+    ret
+
+; flush entire tlb
+; reload CR3 with itself
+; cpu discards all cached virtual physcal translations
+
+flush_tlb: 
+    mov eax, cr3
+    mov cr3, eax
+    ret
+
+flush_tlb_page:
+    mov eax, [esp + 4]
+    invlpg [eax]
+    ret</code></pre>
+
+<p>
+    flushing the whole TLB is pretty simple, as we just have to reload CR3 with itself and it all happens automatically,
+    flushing a specific page requires us to pass the virtual address to a special instruction that will flush the tlb for 
+    the specific page. getting CR2 is the same as the other control register functions etc.
+</p>
+
+<p>
+    And that's basically it for writing the VMM, pretty nice, all we have left is heap allocation and then we are done 
+    with memory management (however these files will probably be adapted as other parts are created)
 </p>
