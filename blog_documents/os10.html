@@ -115,3 +115,318 @@
 
 <h2>The first implementation</h2>
 
+<p>
+    For our first implementation we are just basically making the init function and some extra functinons to help it, as well
+    as making the general structure for our VMM but the structure is rather simple.
+</p>
+
+<pre><code>#ifndef VMM_H
+#define VMM_H
+
+#define PAGE_PRESENT (1 &lt;&lt; 0)
+#define PAGE_WRITABLE (1 &lt;&lt; 1)
+#define PAGE_USER (1 &lt;&lt; 2)
+
+#include &lt;stdint.h&gt;
+
+typedef uint32_t page_directory_t[1024];
+typedef uint32_t page_table_t[1024];
+
+void init_vmm();
+
+extern void set_cr3(uintptr_t dir_ptr);
+extern void set_cr0();
+
+#endif</code></pre>
+
+<p>
+    First we have our definitions, these are just flags for the page directory and page table entries as we discussed before.
+    Then there are our data structures for our page table and page directory, it's simply just a 1024 long aray of 32bit 
+    integers. Then we have our init_vmm function which we will be writing. This requires helper functions for setting our
+    control registers.<br>
+    Now let's look at the implementation for this:
+</p>
+
+<pre><code>#include "vmm.h"
+#include "../kernel/vga_text.h"
+#include "pmm.h"
+
+extern vga_text terminal;
+
+page_directory_t* kernel_directory;
+page_directory_t* current_directory;
+
+
+void init_vmm() {
+    kernel_directory = alloc_frame();
+    page_table_t* tbl_ptr = alloc_frame();
+
+    memset(kernel_directory, 0, 4096);
+    memset(tbl_ptr, 0, 4096);
+    
+    //gives every page up to the limit an entry in the table.
+    for (uint32_t i = 0; i &lt; 1024; i++) {
+        (*tbl_ptr)[i] = (i * 0x1000) | PAGE_PRESENT | PAGE_WRITABLE;
+    }
+
+    (*kernel_directory)[0] = ((uintptr_t)tbl_ptr) | PAGE_PRESENT | PAGE_WRITABLE;    
+
+    current_directory = kernel_directory;
+    set_cr3((uintptr_t)kernel_directory);
+    set_cr0();
+}</code></pre>
+
+<h3>The global variables</h3>
+
+<p>
+    we have two global variables, the first is just the kernel directory, this is because we need to save the kernel directory
+    and have a special one for it as it is the most critical program in an operating system. The current directory for now
+    is will just always have our kernel directory loaded into it, but when we make processes and such we will need to switch
+    directories to access different process as every process would typically have it's own page directory.
+</p>
+
+<h3>The init code</h3>
+
+<p>
+    To start our init code we allocate frames for our kernel directory and the page table that we will be using for our kernel
+    currently, then we use the memset function that we made back in our interrupts code to set the memory of the table and 
+    directory to 0, this is going to be a common practice required for stuff like this, as memory isn't typically wiped, it's 
+    just set as free.
+</p>
+
+<p>
+    After this we loop through and map each virtual address so that <code>virtual address = physical address</code>. 
+    We set the flags for being Present and writable, this is just so that when we turn on paging, we will still be able to
+    actually accesss memory, as if we didn't do this and we tried to make a variable or do anything with memory, we would get 
+    a page fault as each address would result in a page not being present. 
+</p>
+
+<p>
+    We then make the first entry in the kernel directory that points to the page table with the appropriate flags.
+    the kernel directory is then stored in the current directory and then we set CR3 and CR0 to turn on paging.
+</p>
+
+<h3>Assembly</h3>
+
+<pre class="language-x86asm"><code>[BITS 32]
+
+global set_cr3
+global set_cr0
+
+set_cr3:
+    mov eax, [esp + 4]
+    mov cr3, eax
+    ret
+
+set_cr0:
+    mov eax, cr0
+    or eax, 0x80000000
+    mov cr0, eax
+    ret</code></pre>
+
+<p>
+    just some simple code in order to load our desired values into the respective registers, if we then link this code
+    and run our program and there are no faults, we should then have an operating system activated with paging enabled.
+    Perfect! That was simple, but now we should make the functions and architecture that the other parts of our kernel can 
+    use in order to map pages, unmap pages and detect page faults.
+<p>
+
+<h2>Adapting the architecture</h2>
+
+<h3>The header file</h3>
+
+<pre><code>#ifndef VMM_H
+#define VMM_H
+
+#define PAGE_PRESENT (1 &lt;&lt; 0)
+#define PAGE_WRITABLE (1 &lt;&lt; 1)
+#define PAGE_USER (1 &lt;&lt; 2)
+
+//page fault definitions
+#define PRESENT_FAULT (1 &lt;&lt; 0)
+#define WRITE_FAULT (1 &lt;&lt; 1)
+#define USER_FAULT (1 &lt;&lt; 2)
+#define RESERVED_FAULT (1 &lt;&lt; 3)
+#define INSTRUCTION_FETCH_FAULT (1 &lt;&lt; 4)
+
+#include &lt;stdint.h&gt;
+#include "../kernel/interrupts.h"
+
+typedef uint32_t page_directory_t[1024];
+typedef uint32_t page_table_t[1024];
+
+void init_vmm();
+
+extern void set_cr3(uintptr_t dir_ptr);
+extern void set_cr0();
+extern  uint32_t get_cr2();
+
+//calc dir index, calc table index, find/create page table, insert page dir
+void map_page(
+    uintptr_t virtual_address,
+    uintptr_t physical_address,
+    uint32_t flags
+);
+
+void unmap_page(uintptr_t virtual_address);
+uintptr_t get_physical_address(uintptr_t virtual_address);
+
+extern void flush_tlb(void);
+extern void flush_tlb_page(uintptr_t virtual_address);
+
+// Page table management
+
+page_table_t* create_page_table(uint32_t directory_index, uint32_t flags);
+
+// Page fault handling
+void page_fault_handler(registers_t* registers);
+
+
+
+#endif</code></pre>
+
+<p>
+    In our header we just ahve added functions, we have one for recieving CR2, which is used when we get to page faults.
+    We then have our functions for mapping pages, unmapping them, converting virtual addresses to physical ones, creating
+    page tables and then handling page faults. These are all simple actions to conceptualise, but then we have something 
+    we haven't talked about. The TLB is essentially a cache for the most frequently used memory address translations, we won't
+    need to interface with it for now other than flushing when we delete pages and tables.
+</p>
+
+<h3>Implementation file</h3>
+
+<pre><code>#include "vmm.h"
+#include "../kernel/vga_text.h"
+#include "pmm.h"
+
+extern vga_text terminal;
+
+page_directory_t* kernel_directory;
+page_directory_t* current_directory;
+
+
+void init_vmm() {
+    kernel_directory = alloc_frame();
+    page_table_t* tbl_ptr = alloc_frame();
+
+    memset(kernel_directory, 0, 4096);
+    memset(tbl_ptr, 0, 4096);
+    
+    //gives every page up to the limit an entry in the table.
+    for (uint32_t i = 0; i < 1024; i++) {
+        (*tbl_ptr)[i] = (i * 0x1000) | PAGE_PRESENT | PAGE_WRITABLE;
+    }
+
+    (*kernel_directory)[0] = ((uintptr_t)tbl_ptr) | PAGE_PRESENT | PAGE_WRITABLE;    
+
+    current_directory = kernel_directory;
+    set_cr3((uintptr_t)kernel_directory);
+    set_cr0();
+}
+
+page_table_t* create_page_table(uint32_t directory_index, uint32_t flags) {
+    page_table_t* new_table = alloc_frame();
+    memset(new_table, 0, 4096);
+    (*current_directory)[directory_index] = (uintptr_t)new_table | flags;
+    return new_table;
+}
+
+void map_page(uintptr_t virtual_address, uintptr_t physical_address, uint32_t flags) {
+    uint16_t dir_index = (virtual_address >> 22);
+    uint16_t table_index = (virtual_address >> 12); 
+
+    uint32_t dir_entry = (*current_directory)[dir_index];
+    page_table_t* selected_table;
+    if (!(dir_entry & PAGE_PRESENT)) {
+        selected_table = create_page_table(dir_index, flags);
+    } else {
+        selected_table = (page_table_t*)(dir_entry & 0xFFFFF000);
+    }
+
+    (*selected_table)[table_index] = physical_address | flags;
+    flush_tlb_page(virtual_address);
+}
+
+void unmap_page(uintptr_t virtual_address) {
+    uint16_t dir_index = (virtual_address >> 22);
+    uint16_t table_index = (virtual_address >> 12);  
+
+    uint32_t dir_entry = (*current_directory)[dir_index];
+    page_table_t* selected_table = (page_table_t*)(dir_entry & 0xFFFFF000);
+    (*selected_table)[table_index] &= ~(PAGE_PRESENT);
+    flush_tlb_page(virtual_address);
+}
+
+uintptr_t get_physical_address(uintptr_t virtual_address) {
+    uint16_t dir_index = (virtual_address >> 22);
+    uint16_t table_index = (virtual_address >> 12);  
+
+    uint32_t dir_entry = (*current_directory)[dir_index];
+    page_table_t* selected_table = (page_table_t*)(dir_entry & 0xFFFFF000);
+    return (*selected_table)[table_index];
+}
+
+void page_fault_handler(registers_t* registers) {
+
+    uintptr_t address = get_cr2();
+    uint32_t error_code = registers->error_code;
+
+    vga_text_writeline(&terminal, "PAGE FAULT");
+
+    vga_text_write(&terminal, "Address: ");
+    vga_text_write_hex(&terminal, address);
+    vga_text_writeline(&terminal, "");
+
+    vga_text_write(&terminal, "Error code: ");
+    vga_text_write_hex(&terminal, error_code);
+    vga_text_writeline(&terminal, "");
+
+
+    if (error_code & PRESENT_FAULT) {
+        vga_text_writeline(&terminal, "Reason: Protection violation");
+    }
+    else {
+        vga_text_writeline(&terminal, "Reason: Page not present");
+    }
+
+
+    if (error_code & WRITE_FAULT) {
+        vga_text_writeline(&terminal, "Access: Write");
+    }
+    else {
+        vga_text_writeline(&terminal, "Access: Read");
+    }
+
+
+    if (error_code & USER_FAULT) {
+        vga_text_writeline(&terminal, "Mode: User");
+    }
+    else {
+        vga_text_writeline(&terminal, "Mode: Kernel");
+    }
+
+
+    if (error_code & RESERVED_FAULT) {
+        vga_text_writeline(&terminal, "Reserved bit violation");
+    }
+
+
+    if (error_code & INSTRUCTION_FETCH_FAULT) {
+        vga_text_writeline(&terminal, "Instruction fetch fault");
+    }
+
+
+    vga_text_write(&terminal, "Instruction address: ");
+    vga_text_write_hex(&terminal, registers->eip);
+    vga_text_writeline(&terminal, "");
+
+
+    // Stop execution
+    while (1) {
+        __asm__ volatile("cli; hlt");
+    }
+}</code></pre>
+
+<p>
+
+</p>
