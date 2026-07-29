@@ -333,7 +333,7 @@ page_table_t* create_page_table(uint32_t directory_index, uint32_t flags) {
 
 void map_page(uintptr_t virtual_address, uintptr_t physical_address, uint32_t flags) {
     uint16_t dir_index = (virtual_address &gt;&gt; 22);
-    uint16_t table_index = (virtual_address &gt;&gt; 12); 
+    uint16_t table_index = (virtual_address &gt;&gt; 12 &amp; 0x3FF); 
 
     uint32_t dir_entry = (*current_directory)[dir_index];
     page_table_t* selected_table;
@@ -349,7 +349,7 @@ void map_page(uintptr_t virtual_address, uintptr_t physical_address, uint32_t fl
 
 void unmap_page(uintptr_t virtual_address) {
     uint16_t dir_index = (virtual_address &gt;&gt; 22);
-    uint16_t table_index = (virtual_address &gt;&gt; 12);  
+    uint16_t table_index = (virtual_address &gt;&gt; 12 &amp; 0x3FF); 
 
     uint32_t dir_entry = (*current_directory)[dir_index];
     page_table_t* selected_table = (page_table_t*)(dir_entry &amp; 0xFFFFF000);
@@ -359,7 +359,7 @@ void unmap_page(uintptr_t virtual_address) {
 
 uintptr_t get_physical_address(uintptr_t virtual_address) {
     uint16_t dir_index = (virtual_address &gt;&gt; 22);
-    uint16_t table_index = (virtual_address &gt;&gt; 12);  
+    uint16_t table_index = (virtual_address &gt;&gt; 12 &amp; 0x3FF); 
 
     uint32_t dir_entry = (*current_directory)[dir_index];
     page_table_t* selected_table = (page_table_t*)(dir_entry &amp; 0xFFFFF000);
