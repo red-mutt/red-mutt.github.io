@@ -1,1 +1,128 @@
-<h1>Part XII : The Scheduler</h1>
+<h1>Part XII : Process Managment</h1>
+
+<h2>A little word on the next 3 chapters</h2>
+
+<p>
+    The previous 3 chapters we had were each making 3 major components of memory managment. These next 3 parts are going to be
+    formatted in the same way but instead of making memory managment we are making the process managment subsystem.
+    Currently our kernel just makes the cpu execute one instruction after another from one stack, there is no such thing as 
+    multitasking and running mutltiple things at the same time, this is what we want to create.
+</p>
+
+<p>
+    After making tasking the CPU still executes one instruction at a time, but the tasking system continually swaps between 
+    different execution contexts quick enough to the point where they seem to run simultaneously.
+</p>
+
+<h3>What is a process?</h3>
+
+<p>
+    A process is an instance of a computer program that is being executed by the operating system, it would
+    simply contain everything the CPU needs in order to continue executing some code later. For instance a process must 
+    remember:
+    <ul>
+        <li>Which instruction was being executed (EIP)</li>
+        <li>The current stack (ESP)</li>
+        <li>The base pointer (EBP)</li>
+        <li>General registers</li>
+        <li>flags register</li>
+        <li>which address space it owns (CR3)</li>
+        <li>Process state</li>
+        <li>Process ID</li>
+        <li>Kernel stack</li>
+    </ul>
+    Tasking is simply just a loop that goas like:<br>
+    <code> Run A -&gt; Save A -&gt; Load B -&gt; Run B -&gt; Save B -&gt; ...</code>
+</p>
+
+<p>
+    The process managment subsystem is split into these 3 parts:
+    <ol>
+        <li>
+            Process Managment: Responsible for creating and storing processes. 
+        </li>
+        <li>
+            Context Switching: The hardest part, this is responsible for changing which process the CPU is executing.
+        </li>
+        <li>
+            Scheduler: The scheduler decides which process should run next and uses the context switcher to make the switch.
+        </li>
+    </ol>
+</p>
+
+<h2>What we are making now</h2>
+
+<p>
+    As we said before, a process is an <b>instance</b>, it is not the program itself, it is just a saved execution state 
+    that contains the data we need to remember to continue execution. 
+</p>
+
+<h3>The process structure</h3>
+
+<p>
+    For our process structure we simply just need to define a <code>process_t</code> that contains all of our data somewhere
+    in kernel memory. Let's look at that info in detail:
+    <ol>
+        <li>
+            Identity (PID): we need to identify what process is what, this is why we have the PID, this is simply 
+            just a number. For example <code>PID = 5</code> means process number 5.
+        </li>
+        <li>
+            CPU state: The CPU has it's regsters like: <code>EAX, EBX, ECX, EDX, ESP, EBP, EIP and EFLAGS</code> that describe
+            what the CPU is doing. If we switch away from a task, we need to store these values for when we return.
+        </li>
+        <li>
+            Page Directory: A process must have a pointer to it's page directory, when the process runs, the page directory
+            must be loaded into CR3.
+        </li>
+        <li>
+            Stack: Each process needs a stack, so it would have it's own stack pointer that we store.
+        </li>
+        <li>
+            State: This contians what is happing with the process, for example, the state can say that it is running etc...
+        </li>
+        <li>
+            Linking to other processes: The kernel needs a way to find all processes, so each process can point to the 
+            next one, and then if we need to store multiple we can store them as a linked list.
+        </li>
+    </ol>
+</p>
+
+<h3>Process lifetime</h3>
+
+<p>
+    After creating structure, we need to make code that manages these structures. Each process has a lifecycle, 
+    Creating a process is made by simply assigning the next available PID, mapping a page for the stack, setting the initial 
+    CPU state (as the process has never run before). And then it must be added to the process list. 
+</p>
+
+<p>
+    The process list is just the way the kernel stores every process that exists, just like before with the heap, we use a
+    linked list however, you have freedom here, you can use an array if you want, hoever you have some issues deciding how big
+    it should be, what happens when it fills, and how entries are removed.
+</p>
+
+<p>
+    After being added to the process list we can make some functions for process lookup to find a process by PID.
+    When we delete a process we just delete it from the process list by skipping over it. You would also then need to 
+    free it's memory by freeing the kernel stack and destroying the page directory.
+</p>
+
+</p>
+    For <b>loading</b> this will be done by the context switcher, so we don't really need to do this right about now. 
+</p>
+
+<h3>THE KERNEL IS RUNNING!?!?</h3>
+
+<p>
+    The kernel, at this stage in or OS is running an infinite loop, how do we take this already running code and build it
+    into our tasking structure, to cope with this, when we initialize the process manager, we must immediately create a 
+    <code>process_t</code> representing the current kernel execution. Later, when we make the context switcher, we will 
+    already have somewhere to save the kernel's registers.
+</p>
+
+<p>
+    This is pretty much all we need to know to create this stage. Let's get making.
+</p>
+
+<h2>The code</h2>
