@@ -105,7 +105,9 @@
 <p>
     After being added to the process list we can make some functions for process lookup to find a process by PID.
     When we delete a process we just delete it from the process list by skipping over it. You would also then need to 
-    free it's memory by freeing the kernel stack and destroying the page directory.
+    free it's memory by freeing it's stack and destroying the page directory for user processes. It's an important distinction
+    that we are currently <b>ONLY</b> making kernel procesesses, these would use the kernel page directory and hence wouldn't 
+    have their page directory be made free.
 </p>
 
 </p>
@@ -126,3 +128,219 @@
 </p>
 
 <h2>The code</h2>
+
+<h3>The header</h3>
+
+<pre><code>#ifndef PROCMAN_H
+#define PROCMAN_H
+
+#include <stdint.h>
+#include <stddef.h>
+
+#include "../kernel/interrupts.h"
+#include "../memory/vmm.h"
+#include "../memory/pmm.h"
+
+#define INITIAL_PID 1
+#define KERNEL_STACK_SIZE 0x4000
+
+extern uint8_t kernel_stack_bottom;
+
+typedef enum {
+    PROCESS_RUNNING = 0,
+    PROCESS_READY = 1,
+    PROCESS_BLOCKED = 2,
+    PROCESS_SLEEPING = 3,
+    PROCESS_TERMINATED = 4
+} process_states_t;
+
+typedef struct {
+    uint32_t eip;
+    uint32_t cs;
+    uint32_t eflags;
+    uint32_t ds;
+
+    uint32_t edi;
+    uint32_t esi;
+    uint32_t ebp;
+    uint32_t esp;
+    uint32_t ebx;
+    uint32_t edx;
+    uint32_t ecx;
+    uint32_t eax;
+
+} kprocess_registers_t;
+
+typedef struct next {
+    uint32_t pid;
+    kprocess_registers_t regs;
+    process_states_t state;
+    next* next;
+    page_directory_t* page_directory;
+    void* stack;
+} kprocess_t; 
+
+void init_procman();
+
+kprocess_t* create_kprocess(void* task_address);
+
+void kdestroy_process(kprocess_t* proc);
+
+kprocess_t* find_process_by_pid(uint32_t pid);
+
+#endif</code></pre>
+
+<p>
+    The first thing you might take note of here is that the initial PID we use has a value of 1. This is because PID 0, often 
+    has a special meaning in OS design. In linux this refers to an idle/swapper process, for now in our OS this will just be 
+    an invalid PID, but later we could use this to refer to an idle process or something.
+</p>
+
+<p>
+    Next we define the size of the stack for kernel processes as 16Kib, after this we have an enumerator for all of our 
+    process states, let's take a look at them:
+    <ul>
+        <li>PROCESS_RUNNING: The process is currently executing on the CPU.</li>
+        <li>PROCESS_READY: The process could run at this moment, but isn't because the CPU is handling another process</li>
+        <li>PROCESS_BLOCKED: The process cannot currently continue because because it is waiting for some event or resources</li>
+        <li>PROCESS_SLEEPING: Similar to blocked, but the reason is primarly becuase of time</li>
+        <li>PROCESS_TERMINATED: The process has finished execution and should no longer be scheduled</li>
+    </ul>
+</p>
+
+<p>
+    For the registers datastructure it's alot similar to the one we had with our interrupts, but instead we removed things 
+    that are useless like the error code and interrupt number.
+</p>
+
+<p>
+    for the datastructure for the processes, we simple have the PID, the registers which isn't a pointer but the data itself 
+    is embedded, the state of the process a pointer to the next process, a pointer to the page director and finally a pointer
+    to the stack.
+</p>
+
+<p>
+    Our functions then are pretty simple, we have initialisation, creation, destruction and searching.
+</p>
+
+<h3>Implementation</h3>
+
+<pre><code>#include "procman.h"
+#include "../memory/heap.h"
+
+kprocess_t* process_head;
+kprocess_t* current_process;
+uint32_t next_pid;
+
+void init_procman() {
+    process_head = NULL;
+    next_pid = INITIAL_PID;
+
+
+    kprocess_t* kernel_process = kmalloc(sizeof(kprocess_t));
+    kernel_process-&gt;pid = next_pid++;
+    kernel_process-&gt;state = PROCESS_RUNNING;
+    kernel_process-&gt;page_directory = get_current_directory();
+    
+    kprocess_registers_t kernel_regs = {0};
+
+    kernel_process-&gt;regs = kernel_regs;
+    kernel_process-&gt;next = NULL;
+
+    kernel_process-&gt;stack = (void *)&amp;kernel_stack_bottom;
+
+    process_head = kernel_process;
+    current_process = kernel_process;
+}
+
+kprocess_t* create_kprocess(void* task_address) {
+    kprocess_t* new_process = kmalloc(sizeof(kprocess_t));
+    new_process-&gt;pid = next_pid++;
+    new_process-&gt;state = PROCESS_READY;
+    new_process-&gt;stack = kmalloc(KERNEL_STACK_SIZE);
+    new_process-&gt;next = NULL;
+    
+    new_process-&gt;regs.eax = 0;
+    new_process-&gt;regs.ebx = 0;
+    new_process-&gt;regs.ecx = 0;
+    new_process-&gt;regs.edx = 0;
+    new_process-&gt;regs.esi = 0;
+    new_process-&gt;regs.edi = 0;
+    new_process-&gt;regs.ebp = 0;
+
+    new_process-&gt;regs.eip = (uintptr_t)task_address;
+    new_process-&gt;regs.esp = (uint32_t)(new_process-&gt;stack) + KERNEL_STACK_SIZE;
+    //set these to the gdt_code and gdt_data back in the first ASM file.
+    new_process-&gt;regs.cs = 0x08;
+    new_process-&gt;regs.ds = 0x10;
+    //sensible eflags value
+    new_process-&gt;regs.eflags = 0x202;
+
+    new_process-&gt;page_directory = kernel_directory;
+
+    kprocess_t* traversal_process = process_head;
+    while (traversal_process) {
+        if (!traversal_process-&gt;next) {
+            traversal_process-&gt;next = new_process;
+            break;
+        }
+        traversal_process = traversal_process-&gt;next;
+    }
+    return new_process;
+}
+
+void destroy_kprocess(kprocess_t *proc) {
+    if (!proc || proc-&gt;state == PROCESS_RUNNING) return;
+
+    kprocess_t* traversal_process = process_head;
+    if (!traversal_process-&gt;next && traversal_process-&gt;pid == proc-&gt;pid) {
+        process_head = NULL;
+        kfree(proc-&gt;stack);
+        kfree(proc);
+        return;
+    }
+
+    while (traversal_process) {
+        if (!traversal_process-&gt;next) {
+            break;
+        }
+
+        if (traversal_process-&gt;next-&gt;pid == proc-&gt;pid) {
+            traversal_process-&gt;next = traversal_process-&gt;next-&gt;next;
+            break;
+        } 
+        traversal_process = traversal_process-&gt;next;
+    }
+
+    if (!traversal_process) {
+        return;
+    }
+
+    kfree(proc-&gt;stack);
+    kfree(proc);
+}
+
+kprocess_t* find_process_by_pid(uint32_t pid) {
+    kprocess_t* traversal_process = process_head;
+    while (traversal_process) {
+        if (traversal_process-&gt;pid == pid) {
+            return traversal_process;
+        } 
+        traversal_process = traversal_process-&gt;next;
+    }
+    return NULL;
+}</code></pre>
+
+<p>
+    Global variables are simple, process_head is the head of the process list, current_process is for the currently running
+    process, and the next PID is for the next assignable PID.
+</p>
+
+<h3>init_procman</h3>
+
+<p>
+    First of all we initialise the process_head to NULL and the next_pid to 1.<br>
+    The next steps is building our main kernel_process sufficiently. So we set the PID to 1, set the process to running, and 
+    use <code>get_current_directory()</code> (a new function we will make) to get the page directory that is currently being
+    used (which is the kernel directory). 
+</p>
