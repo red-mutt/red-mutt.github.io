@@ -171,11 +171,11 @@ typedef struct {
 
 } kprocess_registers_t;
 
-typedef struct next {
+typedef struct kprocess {
     uint32_t pid;
     kprocess_registers_t regs;
     process_states_t state;
-    next* next;
+    struct kprocess* next;
     page_directory_t* page_directory;
     void* stack;
 } kprocess_t; 
@@ -184,7 +184,7 @@ void init_procman();
 
 kprocess_t* create_kprocess(void* task_address);
 
-void kdestroy_process(kprocess_t* proc);
+void destroy_kprocess(kprocess_t* proc);
 
 kprocess_t* find_process_by_pid(uint32_t pid);
 
@@ -221,6 +221,114 @@ kprocess_t* find_process_by_pid(uint32_t pid);
 
 <p>
     Our functions then are pretty simple, we have initialisation, creation, destruction and searching.
+</p>
+
+<p>
+    The last thing i haven't mentioned is the kernel_stack_bottom as an external variable, for this we need look all the way 
+    back when we moved our kernel into protected mode:
+</p>
+
+<pre class="language-x86asm"><code>global kernel_stack_bottom
+global kernel_stack_top
+
+; no org code starts at 0x0900 though
+[bits 16]
+start:
+    mov ax, cs
+    mov ds, ax
+
+    mov si, hello_string - start
+    call print_string
+
+    jmp enter_protected
+
+print_string:
+    mov ah, 0Eh
+
+print_char:
+    lodsb ; sets al = [DS:SI++]
+
+    cmp al, 0
+    je done
+    
+    int 10h
+
+    jmp print_char
+
+done:
+    ret
+
+enter_protected:
+    cli ;disable interrupts
+    lgdt [gdtr - start] ; load GDT registor with start address of GDT
+    mov eax, cr0
+    or eax, 1 ;set protection enable bit in control register 0 (cr0)
+    mov cr0, eax
+
+    ; perform far jump to selector 08h (offset into GDT, pointing at a 32bit
+    ; PM code segment descriptor)
+    ; to load CS with proper PM32 descriptor)
+
+
+    CODE_SEG equ gdt_code - gdt_start
+    jmp CODE_SEG:p_mode_main
+[bits 32]
+p_mode_main:
+    mov ax, 10h
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    mov esp, kernel_stack_top
+
+    mov byte [0xB8000], 'P'
+    mov byte [0xB8001], 0x02
+
+    ; go into C
+
+    extern kernel_main
+    call kernel_main
+hang:
+    hlt
+    jmp hang
+
+hello_string db 'Hello World!, i am lytlnyblOS, in real mode', 0
+
+gdt_start:
+gdt_null:
+    dq 0
+gdt_code:
+    dw 0xFFFF ; limit
+    dw 0x0000 ; base_low
+    db 0x00 ;base_middle
+    db 0x9A ;access
+    db 0xCF ;flags + limit high 4 bits
+    db 0x00 ;base_high
+gdt_data:
+    dw 0xFFFF
+    dw 0x0000
+    db 0x00
+    db 0x92
+    db 0xCF
+    db 0x00
+gdt_end:
+gdtr:
+    dw gdt_end - gdt_start - 1 ; set manually for testing
+    dd gdt_start
+
+section .bss 
+align 16
+kernel_stack_bottom:
+    resb 0x4000
+kernel_stack_top:</code></pre>
+
+<p>
+    There are 2 things we have changed here. The first thing that has changed is in the <code>p_mode_main</code> label. 
+    We change the value that we move into esp from <code>0x9000</code> to kernel_stack_top. At the bottom we then have
+    another addition, this is just memory that we reserved for the main kernel stack. As before when we just set ESP as 
+    0x9000, the stack didn't have a defined size. We can then later use the kernel_stack_bottom to make a pointer
+    to the bottom of the kernel stack.
 </p>
 
 <h3>Implementation</h3>
@@ -294,7 +402,7 @@ void destroy_kprocess(kprocess_t *proc) {
 
     kprocess_t* traversal_process = process_head;
     if (!traversal_process-&gt;next && traversal_process-&gt;pid == proc-&gt;pid) {
-        process_head = NULL;
+        process_head = traversal_process-&gt;next;
         kfree(proc-&gt;stack);
         kfree(proc);
         return;
@@ -302,6 +410,7 @@ void destroy_kprocess(kprocess_t *proc) {
 
     while (traversal_process) {
         if (!traversal_process-&gt;next) {
+            traversal_process = NULL;
             break;
         }
 
@@ -343,4 +452,83 @@ kprocess_t* find_process_by_pid(uint32_t pid) {
     The next steps is building our main kernel_process sufficiently. So we set the PID to 1, set the process to running, and 
     use <code>get_current_directory()</code> (a new function we will make) to get the page directory that is currently being
     used (which is the kernel directory). 
+</p>
+
+<p>
+    Next all our registers are set to 0, this is becuase the CPU state will change when we change processes using the 
+    context switcher. and then we set the next process to NULL too. next the stack pointer is set to a pointer of the bottom
+    of the kernel stack. And then we set the current_process and process_head accordingly.
+</p>
+
+<h3>create_kprocess</h3>
+
+<p>
+    The point of this function is not to create a process exactly how we want it, but to create a base that we can use later.
+    First we use kmalloc in order to allocate some memory for the process and store it in the heap. Next we then store the
+    PID and state accodingly. 
+</p>
+
+<p>
+
+</p>
+    The 16Kib stack can then also be allocated using the heap too. When we implement user processes we will probably want to 
+    map the pages our self which will give us more control over the address spaces, as we have to control page permissions and
+    stack size.
+</p>
+
+<p>
+    We then set general purpose registers to 0, set eip to a pointer to the task address (which is given to the function).
+    And esp is set to the top of the stack (as stack grows downward in memory). CS and DS are then set to the code and data 
+    segments that we created back when we created our GDT. We then give a sensible eflags value and and set the page directory 
+    to the <code>kernel_directory</code> which can be made public by including: 
+    <code>extern page_directory_t* kernel_directory;</code> in the header for the vmm.
+</p>
+
+<p>
+    Finally, we traverse the linked list and add the newly created process to the end.
+</p>
+
+<h3>destroy_kprocess</h3>
+
+<p>
+    For this function, if the process is null or if it's running then we return without doing anything.<br>
+    If the targeted process is first in the memory we skip over it and free the process's stack and the process itself, and 
+    then return.
+</p>
+
+<p>
+    If it's not the first in the list we then traverse and if we can find it we skip over it. and then free the stack and
+    process. If not found, we simply just return without freeing anything.
+</p>
+
+<h3>find_process_by_pid</h3>
+
+<p>
+    A simple function. We just traverse until the PID matches and then return, if we don't find anything, we just return NULL.
+</p>
+
+<h2>Testing</h2>
+
+<pre><code>    kprocess_t* p1 = create_kprocess(NULL);
+    kprocess_t* p2 = create_kprocess(NULL);
+
+    vga_text_write(&terminal, "PIDs: ");
+    vga_text_write_hex(&terminal, p1->pid);
+    vga_text_write(&terminal, " ");
+    vga_text_write_hex(&terminal, p2->pid);
+    vga_text_writeline(&terminal, "");
+
+    if (find_process_by_pid(p1->pid) == p1 && find_process_by_pid(p2->pid) == p2) {
+        vga_text_writeline(&terminal, "CREATE/LOOKUP OK");
+    }
+
+    destroy_kprocess(p1);
+
+    if (find_process_by_pid(p1->pid) == NULL) {
+        vga_text_writeline(&terminal, "DESTROY OK");
+    }</code></pre>
+
+<p>
+    Here's some simple code that we can put at the end of main in order to test our processes, this should print out 
+    that everything is working. And now we can move onto context switching.
 </p>
