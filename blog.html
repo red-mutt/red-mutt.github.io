@@ -93,6 +93,48 @@
                     hljs.highlightBlock(this, null, false)
                 })
             });
+            $("#os13_content").load("blog_documents/os13.html", function() {
+                hljs.highlightAll();
+                $("span.hljs").each(function() {
+                    var code = $(this).text();
+                    hljs.highlightBlock(this, null, false)
+                })
+            });
+            $("#os14_content").load("blog_documents/os14.html", function() {
+                hljs.highlightAll();
+                $("span.hljs").each(function() {
+                    var code = $(this).text();
+                    hljs.highlightBlock(this, null, false)
+                })
+            });
+            $("#os15_content").load("blog_documents/os15.html", function() {
+                hljs.highlightAll();
+                $("span.hljs").each(function() {
+                    var code = $(this).text();
+                    hljs.highlightBlock(this, null, false)
+                })
+            });
+            $("#os16_content").load("blog_documents/os16.html", function() {
+                hljs.highlightAll();
+                $("span.hljs").each(function() {
+                    var code = $(this).text();
+                    hljs.highlightBlock(this, null, false)
+                })
+            });
+            $("#os17_content").load("blog_documents/os17.html", function() {
+                hljs.highlightAll();
+                $("span.hljs").each(function() {
+                    var code = $(this).text();
+                    hljs.highlightBlock(this, null, false)
+                })
+            });
+            $("#os18_content").load("blog_documents/os18.html", function() {
+                hljs.highlightAll();
+                $("span.hljs").each(function() {
+                    var code = $(this).text();
+                    hljs.highlightBlock(this, null, false)
+                })
+            });
             $("#nes1_content").load("blog_documents/nes1.html"); 
             $("#nes2_content").load("blog_documents/nes2.html", function() {
                 hljs.highlightAll();
@@ -108,7 +150,7 @@
 <body>
     <div class="topbar" style="justify-content: space-between; display: flex;">
         <div>
-            <p>Last Updated: 3 August 2026</p>
+            <p>Last Updated: 5 August 2026</p>
         </div>
 
         <div style="display: flex; visibility: hidden;">
@@ -190,6 +232,30 @@
                         <button id="os_part12_button" class="thirditem">
                             <img src="file.png" class="file_image">
                             <p style="align-self: right; display: inline-block; transform: translate(0, -50%);">Part XII : The Scheduler</p>
+                        </button>
+                        <button id="os_part13_button" class="thirditem">
+                            <img src="file.png" class="file_image">
+                            <p style="align-self: right; display: inline-block; transform: translate(0, -50%);">Part XIII : Context Switching</p>
+                        </button>
+                        <button id="os_part14_button" class="thirditem">
+                            <img src="file.png" class="file_image">
+                            <p style="align-self: right; display: inline-block; transform: translate(0, -50%);">Part XIV : Scheduler</p>
+                        </button>
+                        <button id="os_part15_button" class="thirditem">
+                            <img src="file.png" class="file_image">
+                            <p style="align-self: right; display: inline-block; transform: translate(0, -50%);">Part XV : System Calls<p>
+                        </button>
+                        <button id="os_part16_button" class="thirditem">
+                            <img src="file.png" class="file_image">
+                            <p style="align-self: right; display: inline-block; transform: translate(0, -50%);">Part XVI : Filesystem</p>
+                        </button>
+                        <button id="os_part17_button" class="thirditem">
+                            <img src="file.png" class="file_image">
+                            <p style="align-self: right; display: inline-block; transform: translate(0, -50%);">Part XVII : User Space</p>
+                        </button>
+                        <button id="os_part18_button" class="thirditem">
+                            <img src="file.png" class="file_image">
+                            <p style="align-self: right; display: inline-block; transform: translate(0, -50%);">Part XVIII : Shell</p>
                         </button>
                     </div>
                     <button id="nes_file" class="seconditem">
@@ -275,6 +341,12 @@
         <div id="os10_content" class="doc"></div>
         <div id="os11_content" class="doc"></div>
         <div id="os12_content" class="doc"></div>
+        <div id="os13_content" class="doc"></div>
+        <div id="os14_content" class="doc"></div>
+        <div id="os15_content" class="doc"></div>
+        <div id="os16_content" class="doc"></div>
+        <div id="os17_content" class="doc"></div>
+        <div id="os18_content" class="doc"></div>
 
 
         <div id="nes1_content" class="doc"></div>

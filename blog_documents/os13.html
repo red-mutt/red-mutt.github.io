@@ -1,0 +1,44 @@
+<h1>Part XIII: Context Switching</h1>
+
+<h2>Context</h2>
+
+<p>
+    Not much context is needed for this section, all we need to know is that what we are making is simply used in order to 
+    switch the process datastructures that we have made.
+</p>
+
+<p>
+    Actually there's one major issue that comes with making a context switcher, and we experienced it partially when creating
+    the main kernel process. This is the issue of how can we get the ESP and EIP values when the code currently being executed
+    is switching the process. So we wouldn't be able to get ESP and EIP for our actual process that we want to be saving.
+</p>
+
+<p>
+    The solution for this has been lying right under our noses. It's interrupts, these save a state of the CPU when called
+    and then return to the previous state by popping out the registers_t structure (the one that we defined in the interrupts
+    file, not the process manager file). We won't have a specific interrupt for the context manager, we will just use the timer
+    for now, as this would be where we handle scheduling too.
+</p>
+
+<h2>Coding</h2>
+
+<p>
+    Our header is very small:
+</p>
+
+<pre><code>#ifndef CONTEXT_H
+#define CONTEXT_H
+
+#include "../tasks/procman.h"
+#include <stdint.h>
+
+
+void context_switch(kprocess_t* old_process, 
+        kprocess_t* new_process, 
+        registers_t* regs);
+
+void save_context(kprocess_t* process, registers_t* regs);
+
+void load_context(kprocess_t* process, registers_t* regs);
+
+#endif</code></pre

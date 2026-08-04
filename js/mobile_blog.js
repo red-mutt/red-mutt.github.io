@@ -201,6 +201,49 @@ os12_file.addEventListener('click', () => {
     dropdown_content.style.display = 'none'
     root_visible = !root_visible
 })
+let os13_file = document.getElementById("os_part13_button")
+let os13_content = document.getElementById("os13_content")
+os13_file.addEventListener('click', () => {
+    blog_content.innerHTML = os13_content.innerHTML
+    dropdown_content.style.display = 'none'
+    root_visible = !root_visible
+})
+let os14_file = document.getElementById("os_part14_button")
+let os14_content = document.getElementById("os14_content")
+os14_file.addEventListener('click', () => {
+    blog_content.innerHTML = os14_content.innerHTML
+    dropdown_content.style.display = 'none'
+    root_visible = !root_visible
+})
+let os15_file = document.getElementById("os_part15_button")
+let os15_content = document.getElementById("os15_content")
+os15_file.addEventListener('click', () => {
+    blog_content.innerHTML = os15_content.innerHTML
+    dropdown_content.style.display = 'none'
+    root_visible = !root_visible
+})
+let os16_file = document.getElementById("os_part16_button")
+let os16_content = document.getElementById("os16_content")
+os16_file.addEventListener('click', () => {
+    blog_content.innerHTML = os16_content.innerHTML
+    dropdown_content.style.display = 'none'
+    root_visible = !root_visible
+})
+let os17_file = document.getElementById("os_part17_button")
+let os17_content = document.getElementById("os17_content")
+os17_file.addEventListener('click', () => {
+    blog_content.innerHTML = os17_content.innerHTML
+    dropdown_content.style.display = 'none'
+    root_visible = !root_visible
+})
+let os18_file = document.getElementById("os_part18_button")
+let os18_content = document.getElementById("os18_content")
+os18_file.addEventListener('click', () => {
+    blog_content.innerHTML = os18_content.innerHTML
+    dropdown_content.style.display = 'none'
+    root_visible = !root_visible
+})
+
 
 
 
