@@ -65,7 +65,7 @@ readability_checkbox.addEventListener('change', e => {
                 if (children[j].tagName == "P" || children[j].tagName == "H1" ||
                     children[j].tagName == "H2" || children[j].tagName == "H3" ||
                     children[j].tagName == "UL" || children[j].tagName == "H4" ||
-                    children[j].tagName = "OL" || children[j].tagName == "B"
+                    children[j].tagName == "OL" || children[j].tagName == "B"
                 ){
                     children[j].style.color = 'white'
                 }

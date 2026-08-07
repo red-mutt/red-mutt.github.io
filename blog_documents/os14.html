@@ -1,1 +1,16 @@
 <h1>Part XIV: Scheduler</h1>
+
+<h2>Context</h2>
+
+<p>
+    The scheduler currently is going to be quite simple to make, this is because we already have our context switcher and 
+    process manager. The scheduler just simply decides what process ought to be run next. When making the scheduler, we can 
+    abstract away considering things like, page allocation, the process's stack, the heap and all sorts of stuff, the only
+    things that we need to consider are the current process, the linked list of all processes and each process's state.
+</p>
+
+<p>
+    The scheduling algorithm we are going to be using is round-robin, if you are unfamiliar with this it gives each process 
+    a time slice (basically an ammount of ticks) to execute, and then you cycle through executing all the available processes 
+    for the given time slice.
+</p>
