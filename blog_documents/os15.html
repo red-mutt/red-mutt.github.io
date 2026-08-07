@@ -1,1 +1,85 @@
-<h1>Part XV: System Calls</h1>
+<h1>Part XV: User Space</h1>
+
+<h2>What are we making</h2>
+
+<p>
+    Now that processes are fully made, we want to take our processes and make it possible for them to run outside of the 
+    kernel. While this section is pretty distinct from tasking, we are still building directly on top of it, and we will be 
+    editing the infrastructure for our tasking. This section on making the user space is also split up into it's own two 
+    parts:
+    <ul>
+        <li>Userspace: We get processes to run safely outside of the kernel</li>
+        <li>System calls: We allow user space processes to request services from the kernel</li>
+    </ul>
+    On x86 32 bit architecture, the cpu has 4 levels of privalege, but for our OS we are only really using 2, these being Ring
+    0 privilege (for kernel stuff) and and Ring 3 (for usermode stuff).
+</p>
+
+<p>
+    We know what ring we are in via the CPL (Current privilege level). This is set from the 
+    currently loaded code segment, the CPL is the bottom 2 bits of the CS selector.<br>
+    So now we currently have:
+</p>
+
+<pre><code>GDT
+├── gdt_null
+├── gdt_code
+└── gdt_data</code></pre>
+
+<p>
+    And next we will have:
+</p>
+
+<pre><code>GDT
+├── gdt_null
+├── gdt_code
+├── gdt_data
+├── gdt_user_code
+└── gdt_user_data</code></pre>
+
+<p>
+    With the user data and code segments having their appropriate flags. The privilege level is stored inside the GDT
+    descriptor if you remember correctly when we made our GDT. So how we set our ring level is by changing which GDT 
+    descriptor is loaded into CS
+</p>
+
+<h3>Rings are NOT enough</h3>
+
+<p>
+    If we set the ring level, our memory is still not completely protective, this is becuase we also need to set priveleges
+    within the page tables. As in our OS we have flags for present, writable and user. This is where we will have to change 
+    the existing VMM, as we need to make a way to set the USER flag for when we want to make a page for user mode.
+</p>
+
+<p>
+    Each user process will have it's own page directory, this is becuase for each process we will probably have the same 
+    start address for each program, for example <code>0x00400000</code> we want a constant address to mark the start but
+    will actually reference different locations in physical memory.
+</p>
+
+<p>
+    As well as changing the GDT and paging, we need ot do a couple of other changes in order to make our architecture:
+    <ul>
+        <li>Changing processes so that each user one gets it's own page directory</li>
+        <li>Giving each process it's own user stack in it's user address space</li>
+        <li>Needs a safe to execute kernel stack in rder to temporarily enter the kernel when it needs to</li>
+    </ul>
+    We also need to know about TSS (Task State Segment). This is a CPU-defined structure that tells the CPU which kernel stack
+    we should use if we go from ring 0 to ring 3. 
+</p>
+
+<h3>Ring 3 Execution</h3>
+
+<p>
+    We can't just call user functions, the perfect place to change things like CS in order to enter a user process is the
+    scheduler that we have made before, so we will also have to edit this aswell. 
+</p>
+
+<p>
+    This is all we need to know to make user space for now, it includes refactoring of alot of our previous code, and really
+    we could have been implementing the user space parts from the very start, but it would have taken until this stage in 
+    order to actually get user space processes working, as we would still need to implement system calls after this. We will 
+    start by editing our GDT and making Ring 3.
+</p>
+
+<h2>GDT change</h2>
