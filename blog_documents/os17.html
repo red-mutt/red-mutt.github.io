@@ -1,1 +1,48 @@
-<h1>Part XVII: Filesystem</h1>
+<h1>Part XVII: libc</h1>
+
+<p>
+  I'm sure if you've gotten up to this point; you know what a C standard library is. That is what we are implementing here.
+  We actually have 2 different choices we can take here, we can either:
+  <ul>
+    <li><b>A)</b> Implement our own version of libc.
+    <li><b>B)</b> Take an existing version of libc and port it to our operating system.
+  </ul>
+  For the latter, this would require us to have 17 syscalls that we would then use to weld together the libc and the existing
+  kernel.
+  These syscalls being:
+  <ol>
+    <li>_exit</li>
+    <li>close_</li>
+    <li>envion_</li>
+    <li>execve_</li>
+    <li>fork_</li>
+    <li>fstat_</li>
+    <li>getpid_</li>
+    <li>isatty_</li>
+    <li>kill_</li>
+    <li>link_</li>
+    <li>lseek_</li>
+    <li>open_</li>
+    <li>read_</li>
+    <li>sbrk</li>
+    <li>stat_</li>
+    <li>times_</li>
+    <li>unlink_</li>
+    <li>wait_</li>
+    <li>write_</li>
+  </ol>
+  However, folling the trend of us making all of our own stuff up until now (for example, the bootloader) and the fact that 
+  we currently do not even have a file system or a full set of syscalls, some of which depend on filesystems. I will not be 
+  instructing you how to port a libc; we will be writing our own (very minimal) version of libc. You can consider porting a 
+  libc later if you so wish, or you could continue developing the libc as you go along with creating this operating system,
+  adding new stuff with each added functionality to the operating system.
+</p>
+
+<p>
+  Please be warned however, writing your own libc takes a very long ammount of time, using an existing one would allow you to 
+  focus much more on the development of the OS, rather than the libc. Another issue with using your own libc is that it gives
+  us the ability to port our existing software, therefore with our own it's very possible for this porting of software to 
+  not work. (If you like doom, this is the main thing required to get doom running on your OS :0)
+</p>
+
+
