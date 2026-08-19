@@ -135,6 +135,8 @@ gdt_tss: ; will be populated in C later
     db 0
 gdt_end:</code></pre>
 
+<h2>Process creation</h2>
+
 <p>
     I have also implemented this new structure for the processes:
 </p>
@@ -200,7 +202,9 @@ typedef struct process {
     kstack instead of "stack". After refactoring, let's take a look at our the changes made to the creation of processes
 </p>
 
-<pre><code>process_t* create_process(void* task_address, process_type_t type);
+<pre><code>#define USER_STACK_TOP 0xBFFFF000
+
+process_t* create_process(void* task_address, process_type_t type);
 void create_kprocess(process_t* new_process);
 void create_uprocess(process_t* new_process);</code></pre>
 
@@ -286,7 +290,7 @@ void create_uprocess(process_t* new_process) {
 </code></pre>
 
 
-<h4>what do kernel processes specifically require in creation?</h4>
+<h3>what do kernel processes specifically require in creation?</h4>
 
 <p>
   not much, for a kernel space process we just need to set it with the cs and ds registers that we used before, this however
@@ -295,17 +299,510 @@ void create_uprocess(process_t* new_process) {
 </p>
 
 
-<h4>what do user processes specifically require in creation?</h4>
+<h3>what do user processes specifically require in creation?</h4>
+
+<p>
+  We of course set esp to the top of the user stack (remember that the stack grows downward). And set the CS, DS and SS
+  The value in hex is just the offset in our GDT table that points to user code and user data. The number 3 turns on the bottom
+  two bits of the segment selectors which sets the CPL.<br>
+  Now it's time to handle the process's memory: We allocate a frame and clear it's memory and this is used for the page
+  directory. Now the next step may confuse you a little, but this is an important step. What we do is we copy the kernel's
+  identity mapping to the page directory of the user process. This is important becuase user processes will still need to 
+  access kernel resources, an example of this is being syscalls (the next chapter) where we will need to execute kernel code
+  via an interrupt that ring 3 can access.
+  We then allocate a frame for the user space stack (that is 4Kib long), map it, and then set it's address in the process
+</p>
+
+<h3>What about destruction</h3>
+
+<pre><code>    if (proc->type == PROCESS_USER) {
+        unmap_page(proc->page_directory, USER_STACK_TOP - 4096);
+        unmap_page(proc->page_directory, USER_CODE_BASE);
+        unmap_page(proc->page_directory, USER_VGA);
+        unmap_page(kernel_directory, (uintptr_t)(proc->page_directory));
+    }</code></pre>
+
+<p>
+  Simple enough, just a little more memory to unmap and they we are good.
+</p>
+
+<h2>Changes in the context switcher</h2>
+
+<p>
+  The code is short enough to view all of the changes, so i'll just paste it all here:
+</p>
+
+<pre><code>#include "context.h"
+volatile bool return_to_user;
+
+void save_context(process_t* process, registers_t* regs) {
+    process->regs.eip = regs->eip;
+    process->regs.cs = regs->cs;
+    process->regs.eflags = regs->eflags;
+    process->regs.ds = regs->ds;
+
+    process->regs.edi = regs->edi;
+    process->regs.esi = regs->esi;
+    process->regs.ebp = regs->ebp;
+    process->regs.ebx = regs->ebx;
+    process->regs.edx = regs->edx;
+    process->regs.ecx = regs->ecx;
+    process->regs.eax = regs->eax;
+    
+    if (process->type == PROCESS_KERNEL) {
+        process->regs.esp = regs->esp;
+    } else {
+        process->regs.esp = regs->user_esp;
+        process->regs.ss = regs->ss;
+    }
+}
+
+void load_context(process_t* process, registers_t* regs) {
+    regs->eip = process->regs.eip;
+    regs->cs = process->regs.cs;
+    regs->eflags = process->regs.eflags;
+    regs->ds = process->regs.ds;
+
+    regs->edi = process->regs.edi;
+    regs->esi = process->regs.esi;
+    regs->ebp = process->regs.ebp;
+    regs->ebx = process->regs.ebx;
+    regs->edx = process->regs.edx;
+    regs->ecx = process->regs.ecx;
+    regs->eax = process->regs.eax;
+
+    if (process->type == PROCESS_KERNEL) {
+        regs->esp = process->regs.esp;
+    } else {
+        regs->user_esp = process->regs.esp;
+        regs->ss = process->regs.ss;
+    }
+}
+
+void context_switch(process_t* old_process, process_t* new_process, registers_t* regs) {
+    current_process = new_process;
+    if (old_process->state == PROCESS_RUNNING) {
+        old_process->state = PROCESS_READY;
+    } else if (old_process->state == PROCESS_TERMINATED) {
+        destroy_process(old_process);    
+    }
+    new_process->state = PROCESS_RUNNING;
+    save_context(old_process, regs);
+
+    return_to_user = (new_process->type == PROCESS_USER);
+
+    if (new_process->type == PROCESS_USER) {  
+        tss.esp0 = (uintptr_t)(new_process->kstack) + KERNEL_STACK_SIZE;
+        set_cr3((uintptr_t)new_process->page_directory);
+    } else if (new_process->type == PROCESS_KERNEL) {
+        set_cr3((uintptr_t)kernel_directory);
+    }
+
+    load_context(new_process, regs);
+}</code></pre>
+
+<p>
+  For user and kernel processes, the only thing that changes is in regards to saving and loading the stack. The stack 
+  segment doesn't really matter for kernel processes, so we don't really have to do anything with that afaik.
+</p>
+
+<p>
+  For the context switching function we add in some new logic that terminates the old process if it is marked as TERMINATED.
+  This is going to be important later in this section when an exception happens in a user process. Another thing we do for 
+  user and kernel processes is setting cr3 appropriately and then we do another thing which is setting the esp0 value
+  of the TSS. Let's cover the TSS now.
+</p>
+
+<h3>TSS creation and editing</h3>
+
+<p>
+  Here's the information that would be required in the header file for the process manager:
+</p>
+
+<pre><code>typedef struct {
+    uint32_t prev_tss;
+
+    uint32_t esp0;
+    uint32_t ss0;
+
+    uint32_t esp1;
+    uint32_t ss1;
+
+    uint32_t esp2;
+    uint32_t ss2;
+
+    uint32_t cr3;
+    uint32_t eip;
+    uint32_t eflags;
+
+    uint32_t eax;
+    uint32_t ecx;
+    uint32_t edx;
+    uint32_t ebx;
+
+    uint32_t esp;
+    uint32_t ebp;
+    uint32_t esi;
+    uint32_t edi;
+
+    uint32_t es;
+    uint32_t cs;
+    uint32_t ss;
+    uint32_t ds;
+    uint32_t fs;
+    uint32_t gs;
+
+    uint32_t ldt;
+
+    uint16_t trap;
+    uint16_t iomap_base;
+} __attribute__((packed)) tss_t;
+
+extern tss_t tss;
+extern uint8_t gdt_tss[];
+
+void init_tss(void);
+extern void load_tss(void);</code></pre>
+
+<p>
+  As i said before, TSS just defines where we need to go to get to the kernel stack (for our purposes), so we only really care
+  about 2 registers defined in our structure, these being esp0 and ss0, we can forget about everything else.
+  <code>gdt_tss[]</code> is just the a reference to the gdt descriptor for the TSS that we made global. Let's look
+  at the implementation code:
+</p>
+
+<pre><code>tss_t tss;
+
+void init_tss(void) {
+    uintptr_t base = (uintptr_t)&tss;
+    uint32_t limit = sizeof(tss_t) - 1;
+    gdt_tss[0] = limit & 0xFF;
+    gdt_tss[1] = (limit >> 8) & 0xFF;
+
+    gdt_tss[2] = base & 0xFF;
+    gdt_tss[3] = (base >> 8) & 0xFF;
+
+    gdt_tss[4] = (base >> 16) & 0xFF;
+    gdt_tss[5] = 0x89;
+
+    gdt_tss[6] = (limit >> 16) & 0x0F;
+    gdt_tss[7] = (limit >> 24) & 0xFF;
+
+    memset(&tss, 0, sizeof(tss_t));
+
+    tss.ss0 = 0x10;
+    tss.esp0 = 0;
+
+    tss.iomap_base = sizeof(tss_t);
+    load_tss();
+}</code></pre>
+
+<p>
+  And then we have some assembly:
+</p>
+
+<pre class="language-x86asm"><code>[BITS 32]
+
+global load_tss
+
+load_tss:
+    mov ax, 0x28
+    ltr ax
+    ret</code></pre>
+
+<p>
+  First we define a global variable for the tss. Next his handling the data to be stored in the gdt descriptor. The base is 
+  set to the address of the tss and the limit is set to the size of the tss. I have made setting the descriptor similar
+  to the structure we had in our assembly, just so you can see what the data means and compare it to the info that i gave
+  about gdt entries if you so wish to see what the data individually means. But basically this is just a bunch of data
+  that tells the CPU where the TSS is and how big it is.
+</p>
+
+<p>
+  Next we set the ss0 of the tss to 0x10, this is used to change the segment selector when we want to load the stack
+  from a lower privelege level to a higher one. esp0 does the same, but instead changes the stack pointer instead of the 
+  segment selector, so this will need to be changed each time we load a new user process, this is what we did in the 
+  context switcher as seen before.
+</p>
+
+<p>
+  For the assembly, ltr is an instruction that just means "load task register", the offset of the tss descriptor is given 
+  to it. This is all we need for the TSS setup.
+</p>
+
+<h3>Interrupts</h3>
+
+<p>
+  As we have the introduction of user_esp and ss registers to our register type, we need to introduce these to the type that
+  the interrupt uses:
+</p>
+
+<pre><code>/* registers passed from asm to C */
+typedef struct {
+    uint32_t ds;
+
+    uint32_t edi;
+    uint32_t esi;
+    uint32_t ebp;
+    uint32_t esp;
+    uint32_t ebx;
+    uint32_t edx;
+    uint32_t ecx;
+    uint32_t eax;
+
+    uint32_t interrupt_number;
+    uint32_t error_code;
+
+    uint32_t eip;
+    uint32_t cs;
+    uint32_t eflags;
+
+    uint32_t user_esp;
+    uint32_t ss;
+} __attribute__((packed)) registers_t;</code></pre>
+
+<p>
+  With this structure, iret will handle the user_esp and ss on it's own, so don't worry
+</p>
 
 
+<h3>mapping changes</h3>
 
+<p>
+  As i said before, we will now have multiple page directories; we will need to change our user space page directories from 
+  kernel processes, i already showed you the use of this refactored function before if you noticed within the create_uprocess
+  function. This isn't a hard change, instead of universally using the current_directory within all of our mapping and 
+  translation functions, we just use a pointer to a directory that we pass to all of the functions. Remember that the kernel
+  uses identity mapping, so we don't have to consider the differences between virtual memory and physical, as the kernel 
+  technically still uses phisical memory addresses.
+</p>
+
+<pre><code>//DIRECTORY MUST BE A VIRTUAL ADDRESS, identity mapped for kernel 
+void map_page(page_directory_t* directory, uintptr_t virtual_address, uintptr_t physical_address, uint32_t flags) {
+    uint16_t dir_index = (virtual_address >> 22);
+    uint16_t table_index = (virtual_address >> 12 & 0x3FF); 
+
+    uint32_t dir_entry = (*directory)[dir_index];
+    page_table_t* selected_table;
+    if (!(dir_entry & PAGE_PRESENT)) {
+        selected_table = create_page_table(directory, dir_index, flags);
+    } else {
+        selected_table = (page_table_t*)(dir_entry & 0xFFFFF000);
+    }
+
+    (*selected_table)[table_index] = physical_address | flags;
+    if (directory == current_directory) {
+        flush_tlb_page(virtual_address);
+    }
+}
+
+void unmap_page(page_directory_t* directory, uintptr_t virtual_address) {
+    uint16_t dir_index = (virtual_address >> 22);
+    uint16_t table_index = (virtual_address >> 12 & 0x3FF); 
+
+    uint32_t dir_entry = (*directory)[dir_index];
+    page_table_t* selected_table = (page_table_t*)(dir_entry & 0xFFFFF000);
+    (*selected_table)[table_index] &= ~(PAGE_PRESENT);
+    flush_tlb_page(virtual_address);
+}
+
+uintptr_t get_physical_address(page_directory_t* directory, uintptr_t virtual_address) {
+    uint16_t dir_index = (virtual_address >> 22);
+    uint16_t table_index = (virtual_address >> 12 & 0x3FF); 
+
+    uint32_t dir_entry = (*directory)[dir_index];
+    page_table_t* selected_table = (page_table_t*)(dir_entry & 0xFFFFF000);
+    return (*selected_table)[table_index];
+}</code></pre>
+
+<h3>writing our user code</h3>
+
+<p>
+  Let's take a small break from writing the kernel, and write our code that our first userspace process will have. 
+</p>
+
+<pre><code>#include <stdint.h>
+void _start(void)
+{
+    volatile uint32_t *bad_address = (uint32_t *)0xDEADBEEF;
+
+    *bad_address = 1234;
+
+    volatile unsigned short* vga = (unsigned short*)0x00B00000;
+
+    vga[0] = 'U' | (0x07 << 8);
+
+    while (1) {
+    }
+}</code></pre>
+
+<p>
+  this code has 2 tests. The first one will give a page fault at an address that either should not exist or we will not have
+  access too, the second is directly writing to the VGA, which will indicate that we are actually able to do something 
+  functional.
+</p>
+
+<p>
+  Along side our user space code, we must have a linker to be used, this is becauase how we load our code will be by copying 
+  the data in our binary directly to a space in memory that we can allocate as a user page. Here is the linker:
+</p>
+
+<pre><code>ENTRY(_start)
+
+SECTIONS
+{
+    . = 0x00400000;
+
+    .text :
+    {
+        *(.text)
+    }
+
+    .rodata :
+    {
+        *(.rodata)
+    }
+
+    .data :
+    {
+        *(.data)
+    }
+
+    .bss :
+    {
+        *(.bss)
+    }
+}</code></pre>
+
+
+<p>
+  Just like a simple linker like we made for our original kernel, and then we must build a specific way for a makefile. My
+  makefile skills are pretty poor, so i'll just put the commands here: 
+</p>
+
+<pre><code>	#user tests
+	$(CC) -g -m32 -ffreestanding -fno-pie -fno-pic -c $(USER_TEST_FILE_C) -o user_test.o
+	ld -m elf_i386 -T $(USER_LINKER) user_test.o -o user_test.elf
+	objcopy -O binary user_test.elf user_test.bin
+	objcopy -I binary -O elf32-i386 -B i386 user_test.bin user_test_binary.o
+
+	ld -m elf_i386 -T $(LINKER) kernel.o kernel_main.o vga.o interruptc.o interrupta.o timer.o kb.o pmm.o vmm.o vmma.o heap.o tasks.o context.o scheduler.o tasksa.o user_test_binary.o -o kernel.elf</code></pre>
+
+<p>
+  our linker will generate a label for the start and end of our code, which we can then load into an address that will
+  be for user space.
+</p>
+
+
+<h3>Kernel code</h3>
+
+<p>
+  Add this to the end of our kernel main code:
+</p>
+
+<pre><code>    //userspace testing
+
+    void* code_frame = alloc_frame();
+
+    extern unsigned char _binary_user_test_bin_start[];
+    extern unsigned char _binary_user_test_bin_end[];
+
+    //copy user program to physical frame
+    uintptr_t user_size = (uintptr_t)(_binary_user_test_bin_end - 
+            _binary_user_test_bin_start);
+
+    for (uintptr_t i = 0; i < user_size; i++) {
+        ((uint8_t*)code_frame)[i] = _binary_user_test_bin_start[i];
+    }
+
+    process_t* user_proc = create_process((void*)USER_CODE_BASE, PROCESS_USER);
+
+    map_page(
+        user_proc->page_directory,
+        USER_CODE_BASE, 
+        (uintptr_t)code_frame, 
+        PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER
+    );
+
+    //map vga so process ring 3 can access
+    map_page(
+        user_proc->page_directory,
+        USER_VGA,
+        0xB8000,
+        PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER
+    );
+
+    for (;;);
+}</code></pre>
+
+<p>
+  This is everything we described before, we copy the user space code into an allocated frame and then create a process and 
+  map it as a user, you may be wrondering where the USER_CODE_BASE definition is, and i actually created a seperate header 
+  file for this:
+</p>
+
+<pre><code>#ifndef MAPPINGS_H
+#define MAPPINGS_H
+
+#define USER_CODE_BASE 0x00400000
+#define USER_VGA 0x00B00000
+#define HEAP_START 0xC0000000 
+
+
+#endif
+</code></pre>
+
+<p>
+  This is because when we previously made the kernel heap allocator, we set it's address as 0x00400000.
+  It is important to make a file of these mapping so that they don't collide, if they did it would cause exceptions and would
+  not be very good. This is due to the kernel mappings being included within all of our user space processes, so we can't
+  map any thing for the userspace over anything that already exists for the kernel.
+</p>
+
+<p>
+  After this, if we then run our kernel and we get the DEADBEEF exception then everything is working, but there is one issue
+  that we currently haven't implemented, this is the fact that a user exception crashes the operating system (this is seen by
+  us no longer being able to write text). 
+</p>
+
+<h3>Fixing exception</h3>
+
+<p>
+  To change this, let's just change our isr handler a little:
+</p>
+
+<pre><code>void isr_handler(registers_t* regs) {
+    switch (regs->interrupt_number) {
+        case 14:
+            page_fault_handler(regs);
+            break;
+        default:
+            vga_text_writeline(&terminal, exception_messages[regs->interrupt_number]);
+            break;
+    }
+
+    if ((regs->cs & 3) == 3) {
+        current_process->state = PROCESS_TERMINATED;
+        context_switch(current_process, get_next_process(), regs);
+        return;
+    }
+
+
+    for (;;);
+}</code></pre>
+
+<p>
+  And that should be our userspace code done. We can cause exceptions and our OS should still run, and we should be able to 
+  write to the VGA. The next step is to make the userspace actually usable, by implementing syscalls, which allow us to 
+  use kernel resources from our userspace.
+</p>
 
 
 --- DEV STUFF ---- 
-remember changes in process creation.
-context switcher changes too. 
-and then interrupt with retrieving ss.
-creation of TSS
---user programs compiled seperately
-need to change map_page to take directory (and all other functions)
-write about destruction functions and exception handling
+remember changes in process creation. --
+context switcher changes too. --
+and then interrupt with retrieving ss. --
+creation of TSS --
+user programs compiled seperately --
+need to change map_page to take directory (and all other functions) --
+write about destruction functions and exception handling -- 
