@@ -46,9 +46,11 @@
 <h3>Rings are NOT enough</h3>
 
 <p>
-    If we set the ring level, our memory is still not completely protective, this is becuase we also need to set priveleges
-    within the page tables. As in our OS we have flags for present, writable and user. This is where we will have to change 
-    the existing VMM, as we need to make a way to set the USER flag for when we want to make a page for user mode.
+    If we set the ring level, our memory is still not completely protected, this is becuase we also need to set priveleges
+    within the page tables. As in our OS we have flags for present, writable and user. Anything to be directly accessed by the 
+    userspace must be set with the USER flag, otherwise the user space process will not be able to access it and a page fault
+    will happen. We will also need to edit our VMM a bit, as when we create our processes we will need to edit page directories
+    other than the one that we are currently in.
 </p>
 
 <p>
@@ -63,6 +65,7 @@
         <li>Changing processes so that each user one gets it's own page directory</li>
         <li>Giving each process it's own user stack in it's user address space</li>
         <li>Needs a safe to execute kernel stack in rder to temporarily enter the kernel when it needs to</li>
+        <li>Copying compiled code to an address marked as ring 3</li>
     </ul>
     We also need to know about TSS (Task State Segment). This is a CPU-defined structure that tells the CPU which kernel stack
     we should use if we go from ring 0 to ring 3. 
@@ -90,7 +93,9 @@
     here is the new structure for our GDT:
 </p>
 
-<pre class="language-x86asm"><code>gdt_start:
+<pre class="language-x86asm"><code>global gdt_tss
+
+gdt_start:
 gdt_null:
     dq 0
 gdt_code:
@@ -121,6 +126,13 @@ gdt_user_data:
     db 0xF2
     db 0xCF
     db 0x00
+gdt_tss: ; will be populated in C later
+    dw 0
+    dw 0
+    db 0
+    db 0
+    db 0
+    db 0
 gdt_end:</code></pre>
 
 <p>
@@ -177,16 +189,115 @@ typedef struct process {
 <p>
     This is basically a refactor of the kernel process, there are multiple ways we could have done this, but this will just 
     be the simplest to allow all of our process list to have the same type.<br>
-    This change will include alot of refactoring of our code, we should have probably considered the eventual development 
+    This change will include alot of refactoring of our code, as i said before we should have probably 
+    considered the eventual development 
     of our user space earlier on, but here we are! (and it's pretty important to be okay refactoring stuff in programming in 
     general).
 </p>
 
 <p>
     I'll allow you to change all of the current existing code in procman.c to use process_t instead of kprocess_t and also 
-    kstack instead of "stack". After refactoring, i'd much more prefer to have different functions just for creating user
-    processes, despite being much more verbose i think these processes have justifiable differences in order to allow this.
+    kstack instead of "stack". After refactoring, let's take a look at our the changes made to the creation of processes
 </p>
+
+<pre><code>process_t* create_process(void* task_address, process_type_t type);
+void create_kprocess(process_t* new_process);
+void create_uprocess(process_t* new_process);</code></pre>
+
+<p>
+  As you can probably guess the create_process function will handle all generic process stuff, and then our respective
+  user space and kernel space processes will do everything that a user and kernel space process would require.
+</p>
+
+<pre><code>process_t* create_process(void* task_address, process_type_t type) {
+    process_t* new_process = kmalloc(sizeof(process_t));
+
+    new_process->type = type;
+    new_process->pid = next_pid++;
+    new_process->state = PROCESS_READY;
+    new_process->kstack = kmalloc(KERNEL_STACK_SIZE);
+    new_process->next = NULL;
+
+    new_process->regs.eax = 0;
+    new_process->regs.ebx = 0;
+    new_process->regs.ecx = 0;
+    new_process->regs.edx = 0;
+    new_process->regs.esi = 0;
+    new_process->regs.edi = 0;
+    new_process->regs.ebp = 0;
+
+    new_process->regs.eip = (uintptr_t)task_address;
+    //esp defined based on type
+    
+    new_process->regs.eflags = 0x202;
+
+    if (type == PROCESS_KERNEL) {
+        create_kprocess(new_process);
+    } else {
+        create_uprocess(new_process);
+    }
+
+    process_t* traversal_process = process_head;
+    while (traversal_process) {
+        if (!traversal_process->next) {
+            traversal_process->next = new_process;
+            break;
+        }
+        traversal_process = traversal_process->next;
+    }
+    
+    return new_process;
+}
+
+void create_kprocess(process_t* new_process) {
+    new_process->regs.esp = (uint32_t)(new_process->kstack) + KERNEL_STACK_SIZE;
+    new_process->regs.cs = 0x08;
+    new_process->regs.ds = 0x10;
+    new_process->regs.ss = 0x10;
+
+    new_process->page_directory = kernel_directory;
+}
+
+void create_uprocess(process_t* new_process) {
+    new_process->regs.esp = USER_STACK_TOP;
+    
+    new_process->regs.cs = 0x18 | 3;
+    new_process->regs.ds = 0x20 | 3;
+    new_process->regs.ss = 0x20 | 3;
+
+    new_process->page_directory = (page_directory_t*)alloc_frame();
+    memset((page_directory_t*)new_process->page_directory, 0, 4096);
+
+    for (uint32_t i = 0; i < 1024; i++) {
+        (*new_process->page_directory)[i] = (*kernel_directory)[i];
+    }
+
+    uintptr_t ustack_frame = (uintptr_t)alloc_frame();
+
+    map_page(new_process->page_directory, 
+            USER_STACK_TOP - 4096,
+            ustack_frame,
+            PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER
+    );
+
+    new_process->ustack = (void*)(USER_STACK_TOP - 4096);
+}
+
+</code></pre>
+
+
+<h4>what do kernel processes specifically require in creation?</h4>
+
+<p>
+  not much, for a kernel space process we just need to set it with the cs and ds registers that we used before, this however
+  includes the addition of the ss register (which is just set to the same as ds). We also set the kernel stack and page
+  directory the same way we did before
+</p>
+
+
+<h4>what do user processes specifically require in creation?</h4>
+
+
 
 
 

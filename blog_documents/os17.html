@@ -45,4 +45,58 @@
   not work. (If you like doom, this is the main thing required to get doom running on your OS :0)
 </p>
 
+<h2>The functions we are making</h2>
+
+<p>
+  Because we want a very minimal version of libc, i can list to you everything that we will be making, here:
+  <pre>--memory:
+malloc
+free
+calloc
+realloc
+memcpy
+memmove
+memset
+memcmp
+
+--string
+strlen
+strcmp
+strncmp
+strcpy
+strcat
+strchr
+strrchr
+strstr
+atoi
+
+--output
+putchar
+puts
+printf
+(fputs??)
+
+--character stuffs
+isalpha
+isdigit
+isalnum
+isspace
+islower
+isupper
+tolower
+toupper</pre>
+  You may notice that in the previous section, we did not write any syscalls that interface with the heap allocator we wrote
+  for our kernel, this is because the kernel's heap and a user process's heap are kept completely seperate, we will be writing
+  a completely seperate heap allocator here. This makes the memory section the hardest section in our libc, but it's nothing 
+  we haven't done before, so we should be fine!
+</p>
+
+<p>
+  Basically, writing our libc isn't really going to be too hard, but with all these functions and the requirement of a new
+  memory allocator, it is going to create a little bit of a long time. This chapter will be structured by me going one by one
+  and getting you aquainted with the information required to make a libc and then i will show you my implementation of a libc
+  after.
+</p>
+
+
 
