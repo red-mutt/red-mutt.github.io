@@ -7,8 +7,8 @@
     <li><b>A)</b> Implement our own version of libc.
     <li><b>B)</b> Take an existing version of libc and port it to our operating system.
   </ul>
-  For the latter, this would require us to have 17 syscalls that we would then use to weld together the libc and the existing
-  kernel.
+  For the latter, this would require us to have 17 syscalls (According to POSIX standards)
+  that we would then use to weld together the libc and the existing kernel.
   These syscalls being:
   <ol>
     <li>_exit</li>
@@ -93,10 +93,17 @@ toupper</pre>
 
 <p>
   Basically, writing our libc isn't really going to be too hard, but with all these functions and the requirement of a new
-  memory allocator, it is going to create a little bit of a long time. This chapter will be structured by me going one by one
+  memory allocator, it is going to take a bit of a long time. This chapter will be structured by me going one by one
   and getting you aquainted with the information required to make a libc and then i will show you my implementation of a libc
   after.
 </p>
+
+<h2>Memory allocation</h2>
+
+<p>
+  The memory allocator is the largest task here. So we will do that first. 
+</p>
+
 
 
 
