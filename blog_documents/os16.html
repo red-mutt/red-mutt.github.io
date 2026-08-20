@@ -1,5 +1,51 @@
 <h1>Part XVI: System Calls</h1>
 
+<p>
+  Now it's time to make a userspace some what useful. our set of syscalls will not meet the POSIX standards, and will be 
+  an incredibly simple implementation. The good part of this is that it's fairly simple to extend the set of syscalls that we 
+  have, we can just simply add more and more as our operating system requires more and more things.<br>
+  Our set of syscalls will be:
+  <code>exit, getpid, yield, sleep, write, read, sbrk</code>
+</p>
+
+<h2>The context</h2>
+
+<h3>How do we get into the kernel?</h3>
+
+<p>
+  Simple; the answer is interrupts! In this section we will be making our very first software interrupt. For our syscalls
+  we will move the values that the syscalls require into <code>eax, ebx, ecx, edx</code>. Then we can access this by checking
+  our interrupts register type. We can use the same interrupt for each syscall and then eax will just a value that identifies
+  the syscall.
+</p>
+
+<p>
+  Let's look into each and every one of the syscalls we'll make and how they're supposed to work
+</p>
+
+<h3>void exit(void)</h3>
+
+<p>
+  The simplest syscall out of them all, we just set the process to terminated and perform a context switch in order to delete
+  it, if we don't context switch it will just delete on the next timer call, which will lead to undefined behaviour, so 
+  don't do that.
+</p>
+
+<h3>uint32_t get_pid(void)</h3>
+
+<p>
+  it's obvious what this does, get's the pid for the currently running process that we call it from, we can return by moving
+  the data into eax if this is the first thing that we push to the stack.
+</p>
+
+<h3>void yield(void);</h3>
+
+<p>
+  simply just a manual way to perform a context switch from a user process. Doesn't specify which process to switch to.
+</p>
+
+<h3>
+
 --DEV NOTES--
 current:
   -exit
